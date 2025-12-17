@@ -31,6 +31,8 @@ return [
     'central_connection' => 'mysql', // Your main connection
     'tenant_connection' => 'tenant', // The dynamic connection name
     'tenant_model' => App\Models\Tenant::class, // Your Tenant Model
+    'tenant_migrations_path' => 'database/migrations/tenants', // Path to tenant migrations
+    'tenant_database_prefix' => 'tenant_', // Prefix for tenant databases
 ];
 ```
 
