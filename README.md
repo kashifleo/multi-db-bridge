@@ -59,36 +59,6 @@ class Tenant extends Model implements DbBridgeConnectionContract
 }
 ```
 
-### Connecting to a Tenant
-
-```php
-use Kashifleo\MultiDBBridge\Facades\DbBridge;
-use App\Models\Tenant;
-
-$tenant = Tenant::find(1);
-
-// Connect explicitly
-DbBridge::connect($tenant);
-
-// Check connection
-if (DbBridge::isConnected()) {
-    $current = DbBridge::current();
-}
-
-// Disconnect
-DbBridge::disconnect();
-```
-
-### Simultaneous Database Usage
-
-```php
-// Query Central DB (default connection)
-$users = \App\Models\User::on('mysql')->get(); // or default
-
-// Query Tenant DB
-$orders = \App\Models\Order::on('tenant')->get();
-```
-
 ```php
 namespace App\Models;
 
@@ -121,14 +91,14 @@ You can programmatically manage tenant databases using the `DbBridge` facade. Th
 ```php
 use Kashifleo\MultiDBBridge\Facades\DbBridge;
 
-// Create the tenant's database
-// This uses the 'tenant_database_prefix' from config if you use it in your model
-DbBridge::createDatabase($tenant);
-
 // Generate a standard database name
 // Pattern: {prefix}{id}_{slug}_{year}
 $dbName = DbBridge::generateDatabaseName($tenant);
 $tenant->update(['db_database' => $dbName]);
+
+// Create the tenant's database
+// This uses the 'tenant_database_prefix' from config if you use it in your model
+DbBridge::createDatabase($tenant);
 
 // Run migrations for the tenant
 DbBridge::migrate($tenant);
@@ -137,47 +107,37 @@ DbBridge::migrate($tenant);
 DbBridge::dropDatabase($tenant);
 ```
 
-### Queue Support
-
-To use tenant connections inside Queued Jobs, you should pass the Tenant model to the Job's constructor and explicitly connect within the `handle` method. This ensures clarity and control.
+### Connecting to a Tenant
 
 ```php
-namespace App\Jobs;
-
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Kashifleo\MultiDBBridge\Facades\DbBridge;
-use App\Models\Tenant as TenantModel;
+use App\Models\Tenant;
 
-class ProcessTenantOrder implements ShouldQueue
-{
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+$tenant = Tenant::find(1);
 
-    protected $tenant;
+// Connect explicitly
+DbBridge::connect($tenant);
 
-    public function __construct(TenantModel $tenant)
-    {
-        $this->tenant = $tenant;
-    }
-
-    public function handle()
-    {
-        // Explicitly connect to the tenant
-        DbBridge::connect($this->tenant);
-
-        // Perform actions on the tenant database
-        // ...
-
-        // Optional: Disconnect if needed, though the worker will likely reset for next job
-        // DbBridge::disconnect();
-    }
+// Check connection
+if (DbBridge::isConnected()) {
+    $current = DbBridge::current();
 }
+
+// Disconnect
+DbBridge::disconnect();
 ```
 
-## Tenant Database Migrations
+### Simultaneous Database Usage
+
+```php
+// Query Central DB (default connection)
+$users = \App\Models\User::on('mysql')->get(); // or default
+
+// Query Tenant DB
+$orders = \App\Models\Order::on('tenant')->get();
+```
+ 
+ ## Tenant Database Migrations
 
 This package provides a robust way to manage tenant database migrations separate from your central migrations.
 
@@ -218,6 +178,83 @@ php artisan dbbridge:migrate --all
 ```
 
 The command dynamically connects to each tenant's database using the credentials stored in your central database and runs the migrations found in the `tenant_migrations_path`.
+
+## Middleware Usage
+ 
+ The `EnsureDbBridgeConnected` middleware acts as a **Guard**. It aborts the request with a `403 Unauthorized` error if no tenant is connected. It does **not** automatically connect for you; it only ensures security.
+ 
+ ### Registering the Middleware
+ 
+ As this is a package, you must register the middleware in your application.
+ 
+ **For Laravel 11+ (`bootstrap/app.php`):**
+ ```php
+ use Kashifleo\MultiDBBridge\Middleware\EnsureDbBridgeConnected;
+ 
+ ->withMiddleware(function (Middleware $middleware) {
+     $middleware->alias([
+         'tenant.auth' => EnsureDbBridgeConnected::class,
+     ]);
+ })
+ ```
+ 
+ ### Applying to Routes
+ 
+ Use it on routes that strictly require a tenant context (e.g., dashboard, orders).
+ 
+ ```php
+ Route::middleware([
+     'web', 
+     'auth', 
+     'tenant.auth' // Ensures a tenant is connected before proceeding
+ ])->group(function () {
+     
+     Route::get('/dashboard', function () {
+         return DbBridge::current()->name . ' Dashboard';
+     });
+     
+ });
+ ```
+ 
+### Queue Support
+
+To use tenant connections inside Queued Jobs, you should pass the Tenant model to the Job's constructor and explicitly connect within the `handle` method. This ensures clarity and control.
+
+```php
+namespace App\Jobs;
+
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Kashifleo\MultiDBBridge\Facades\DbBridge;
+use App\Models\Tenant as TenantModel;
+
+class ProcessTenantOrder implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    protected $tenant;
+
+    public function __construct(TenantModel $tenant)
+    {
+        $this->tenant = $tenant;
+    }
+
+    public function handle()
+    {
+        // Explicitly connect to the tenant
+        DbBridge::connect($this->tenant);
+
+        // Perform actions on the tenant database
+        // ...
+
+        // Optional: Disconnect if needed, though the worker will likely reset for next job
+        // DbBridge::disconnect();
+    }
+}
+```
 
 ## License
 

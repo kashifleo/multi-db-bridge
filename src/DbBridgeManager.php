@@ -69,15 +69,37 @@ class DbBridgeManager
      */
     public function createDatabase(DbBridgeConnectionContract $tenant): bool
     {
+        $driver = $tenant->getDatabaseDriver();
         $databaseName = $tenant->getDatabaseName();
-        $charset = config('database.connections.mysql.charset', 'utf8mb4');
-        $collation = config('database.connections.mysql.collation', 'utf8mb4_unicode_ci');
-
         $centralConnection = config('dbbridge.central_connection', 'mysql');
 
-        return \Illuminate\Support\Facades\DB::connection($centralConnection)->statement(
-            "CREATE DATABASE IF NOT EXISTS `{$databaseName}` CHARACTER SET $charset COLLATE $collation"
-        );
+        switch ($driver) {
+            case 'sqlite':
+                return touch($databaseName);
+
+            case 'mysql':
+            case 'mariadb':
+                $charset = config("database.connections.{$driver}.charset", 'utf8mb4');
+                $collation = config("database.connections.{$driver}.collation", 'utf8mb4_unicode_ci');
+
+                return \Illuminate\Support\Facades\DB::connection($centralConnection)->statement(
+                    "CREATE DATABASE IF NOT EXISTS `{$databaseName}` CHARACTER SET $charset COLLATE $collation"
+                );
+
+            case 'pgsql':
+                $charset = config("database.connections.pgsql.charset", 'utf8');
+                return \Illuminate\Support\Facades\DB::connection($centralConnection)->statement(
+                    "CREATE DATABASE \"{$databaseName}\" WITH ENCODING '{$charset}'"
+                );
+
+            case 'sqlsrv':
+                return \Illuminate\Support\Facades\DB::connection($centralConnection)->statement(
+                    "CREATE DATABASE [{$databaseName}]"
+                );
+
+            default:
+                throw new \Exception("Unsupported database driver: {$driver}");
+        }
     }
 
     /**
